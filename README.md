@@ -46,6 +46,7 @@ Implementation sequence:
 - `IMPLEMENTATION_PLAN.md`
 - `IMPLEMENTATION_DECISIONS.md`
 - `CLAIM_STATUS.md`
+- `RECOVERY.md`
 
 Claim automation:
 
