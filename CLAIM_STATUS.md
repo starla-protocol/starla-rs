@@ -13,7 +13,8 @@
 - local status: provisional pass
 - basis:
   - route-level black-box integration tests in `tests/core_http_claim.rs`
-  - no external conformance runner yet
+  - daemon-level black-box claim test in `tests/core_http_blackbox.rs`
+  - no standalone external conformance runner yet
 
 ## Vectors
 
@@ -105,6 +106,6 @@
 
 ## Remaining Work
 
-- execute the same claim through an external black-box runner
+- execute the same claim through a standalone external conformance runner
 - record runner identity and run date
 - convert provisional pass into a real implementation report

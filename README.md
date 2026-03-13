@@ -47,6 +47,11 @@ Implementation sequence:
 - `IMPLEMENTATION_DECISIONS.md`
 - `CLAIM_STATUS.md`
 
+Claim automation:
+
+- `scripts/run-core-http-claim.sh`
+- `.github/workflows/core-http-claim.yml`
+
 ## Development
 
 Run:
