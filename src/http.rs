@@ -6,7 +6,7 @@ use crate::{
 use axum::{
     Json, Router,
     extract::{Path, State},
-    http::StatusCode,
+    http::{HeaderMap, StatusCode},
     response::{IntoResponse, Response},
     routing::{get, post},
 };
@@ -37,6 +37,7 @@ impl IntoResponse for ProtocolError {
         let (status, code) = match self {
             Self::NotFound => (StatusCode::NOT_FOUND, "not_found"),
             Self::InvalidState => (StatusCode::CONFLICT, "invalid_state"),
+            Self::IdempotencyConflict => (StatusCode::CONFLICT, "idempotency_conflict"),
         };
 
         (
@@ -126,7 +127,7 @@ pub fn router(state: AppState) -> Router {
 async fn root() -> Json<RootResponse> {
     Json(RootResponse {
         implementation: "starla-rs",
-        state: "bootstrap",
+        state: "early_implementation",
         target_protocol_version: "v1",
         target_binding: "HTTP Binding v1",
         target_profile: "Core",
@@ -205,21 +206,36 @@ async fn terminate_agent_instance(
 async fn submit_work(
     Path(agent_instance_id): Path<String>,
     State(state): State<AppState>,
+    headers: HeaderMap,
     Json(request): Json<SubmitWorkRequest>,
 ) -> Result<(StatusCode, Json<crate::domain::SubmitWorkView>), ProtocolError> {
-    let (execution_id, view) = state
+    let idempotency_key = headers
+        .get("Idempotency-Key")
+        .and_then(|value| value.to_str().ok())
+        .map(str::to_string);
+
+    let outcome = state
         .submit_work(
             &agent_instance_id,
             SubmitWorkCommand {
                 input: request.input,
                 session_id: request.session_id,
                 references: request.references,
+                idempotency_key,
             },
         )
         .await?;
 
-    runtime::spawn_execution_progress(state, execution_id);
-    Ok((StatusCode::CREATED, Json(view)))
+    if outcome.created {
+        runtime::spawn_execution_progress(state, outcome.view.execution_id.clone());
+    }
+
+    let status = if outcome.created {
+        StatusCode::CREATED
+    } else {
+        StatusCode::OK
+    };
+    Ok((status, Json(outcome.view)))
 }
 
 async fn list_sessions(

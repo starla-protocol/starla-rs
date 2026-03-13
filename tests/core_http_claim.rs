@@ -14,7 +14,20 @@ async fn send(
     uri: &str,
     body: Option<Value>,
 ) -> (StatusCode, Value) {
+    send_with_idempotency(state, method, uri, body, None).await
+}
+
+async fn send_with_idempotency(
+    state: &AppState,
+    method: Method,
+    uri: &str,
+    body: Option<Value>,
+    idempotency_key: Option<&str>,
+) -> (StatusCode, Value) {
     let mut request = Request::builder().method(method).uri(uri);
+    if let Some(idempotency_key) = idempotency_key {
+        request = request.header("Idempotency-Key", idempotency_key);
+    }
     let body = match body {
         Some(body) => {
             request = request.header("content-type", "application/json");
@@ -248,6 +261,67 @@ async fn submit_work_rejected_when_instance_paused() {
 
     assert_eq!(status, StatusCode::CONFLICT);
     assert_error_code(&body, "invalid_state");
+}
+
+#[tokio::test]
+async fn submit_work_idempotent_replay_preserves_execution() {
+    let state = AppState::seeded();
+    let request_body = json!({
+        "input": {"message": "hello"},
+        "references": [{"kind": "doc", "id": "doc-1"}]
+    });
+
+    let (status, body) = send_with_idempotency(
+        &state,
+        Method::POST,
+        "/v1/agent-instances/agent-inst-primary/submit-work",
+        Some(request_body.clone()),
+        Some("submit-1"),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED);
+    let execution_id = body["execution_id"].as_str().expect("execution id");
+
+    let (status, replay_body) = send_with_idempotency(
+        &state,
+        Method::POST,
+        "/v1/agent-instances/agent-inst-primary/submit-work",
+        Some(request_body),
+        Some("submit-1"),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(replay_body["execution_id"], execution_id);
+}
+
+#[tokio::test]
+async fn submit_work_rejects_conflicting_idempotent_replay() {
+    let state = AppState::seeded();
+
+    let (status, _) = send_with_idempotency(
+        &state,
+        Method::POST,
+        "/v1/agent-instances/agent-inst-primary/submit-work",
+        Some(json!({
+            "input": {"message": "hello"}
+        })),
+        Some("submit-2"),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED);
+
+    let (status, body) = send_with_idempotency(
+        &state,
+        Method::POST,
+        "/v1/agent-instances/agent-inst-primary/submit-work",
+        Some(json!({
+            "input": {"message": "different"}
+        })),
+        Some("submit-2"),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CONFLICT);
+    assert_error_code(&body, "idempotency_conflict");
 }
 
 #[tokio::test]

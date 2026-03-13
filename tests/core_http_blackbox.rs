@@ -65,7 +65,20 @@ impl RunningServer {
     }
 
     async fn post(&self, path: &str, body: Option<Value>) -> (StatusCode, Value) {
+        self.post_with_idempotency(path, body, None).await
+    }
+
+    async fn post_with_idempotency(
+        &self,
+        path: &str,
+        body: Option<Value>,
+        idempotency_key: Option<&str>,
+    ) -> (StatusCode, Value) {
         let request = self.client.post(self.url(path));
+        let request = match idempotency_key {
+            Some(idempotency_key) => request.header("Idempotency-Key", idempotency_key),
+            None => request,
+        };
         let request = match body {
             Some(body) => request.json(&body),
             None => request,
@@ -222,6 +235,55 @@ async fn submit_work_vectors(server: &RunningServer) {
         .await;
     assert_eq!(status, StatusCode::CONFLICT);
     assert_error_code(&body, "invalid_state");
+
+    let request_body = json!({
+        "input": {"message": "idempotent"},
+        "references": [{"kind": "doc", "id": "doc-1"}]
+    });
+
+    let (status, body) = server
+        .post_with_idempotency(
+            "/v1/agent-instances/agent-inst-primary/submit-work",
+            Some(request_body.clone()),
+            Some("submit-1"),
+        )
+        .await;
+    assert_eq!(status, StatusCode::CREATED);
+    let execution_id = body["execution_id"].as_str().expect("execution id");
+
+    let (status, body) = server
+        .post_with_idempotency(
+            "/v1/agent-instances/agent-inst-primary/submit-work",
+            Some(request_body),
+            Some("submit-1"),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["execution_id"], execution_id);
+
+    let (status, body) = server
+        .post_with_idempotency(
+            "/v1/agent-instances/agent-inst-primary/submit-work",
+            Some(json!({
+                "input": {"message": "first"}
+            })),
+            Some("submit-2"),
+        )
+        .await;
+    assert_eq!(status, StatusCode::CREATED);
+    assert!(body["execution_id"].is_string());
+
+    let (status, body) = server
+        .post_with_idempotency(
+            "/v1/agent-instances/agent-inst-primary/submit-work",
+            Some(json!({
+                "input": {"message": "second"}
+            })),
+            Some("submit-2"),
+        )
+        .await;
+    assert_eq!(status, StatusCode::CONFLICT);
+    assert_error_code(&body, "idempotency_conflict");
 }
 
 async fn execution_vectors(server: &RunningServer) {

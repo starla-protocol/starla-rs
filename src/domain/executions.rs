@@ -23,6 +23,7 @@ pub struct SubmitWorkCommand {
     pub input: Value,
     pub session_id: Option<String>,
     pub references: Vec<Value>,
+    pub idempotency_key: Option<String>,
 }
 
 #[derive(Clone, Debug)]
@@ -152,6 +153,12 @@ pub struct SubmitWorkView {
     pub state: ExecutionState,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub session_id: Option<String>,
+}
+
+#[derive(Clone, Debug)]
+pub struct SubmitWorkOutcome {
+    pub created: bool,
+    pub view: SubmitWorkView,
 }
 
 #[derive(Clone, Debug, Serialize)]

@@ -11,6 +11,6 @@ pub use errors::ProtocolError;
 pub use executions::{
     ContextSnapshot, DelegateExecutionCommand, DelegateExecutionView, EventRecord,
     ExecutionListItem, ExecutionRecord, ExecutionSnapshot, ExecutionState, SubmitWorkCommand,
-    SubmitWorkView, SyntheticOutcome, synthetic_outcome,
+    SubmitWorkOutcome, SubmitWorkView, SyntheticOutcome, synthetic_outcome,
 };
 pub use sessions::{SessionRecord, SessionState, SessionView};

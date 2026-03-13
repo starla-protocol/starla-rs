@@ -3,7 +3,7 @@ use crate::domain::{
     AgentInstanceState, AgentInstanceView, ContextSnapshot, DelegateExecutionCommand,
     DelegateExecutionView, EventRecord, ExecutionListItem, ExecutionRecord, ExecutionSnapshot,
     ExecutionState, ProtocolError, SessionRecord, SessionState, SessionView, SubmitWorkCommand,
-    SubmitWorkView, SyntheticOutcome, synthetic_outcome,
+    SubmitWorkOutcome, SubmitWorkView, SyntheticOutcome, synthetic_outcome,
 };
 use serde_json::{Value, json};
 use std::{
@@ -202,7 +202,15 @@ impl AppState {
         &self,
         agent_instance_id: &str,
         command: SubmitWorkCommand,
-    ) -> Result<(String, SubmitWorkView), ProtocolError> {
+    ) -> Result<SubmitWorkOutcome, ProtocolError> {
+        let submit_key = SubmitWorkKey::new(
+            agent_instance_id,
+            command.idempotency_key.clone(),
+            &command.input,
+            command.session_id.as_deref(),
+            &command.references,
+        );
+
         let execution_id = self.next_execution_id();
 
         {
@@ -214,6 +222,28 @@ impl AppState {
 
             if instance.state != AgentInstanceState::Ready {
                 return Err(ProtocolError::InvalidState);
+            }
+
+            if let Some(key) = submit_key.as_ref() {
+                if let Some(replay) = store.submit_work_replays.get(&key.lookup_key) {
+                    if replay.request_fingerprint != key.request_fingerprint {
+                        return Err(ProtocolError::IdempotencyConflict);
+                    }
+
+                    let execution = store
+                        .executions
+                        .get(&replay.execution_id)
+                        .ok_or(ProtocolError::NotFound)?;
+
+                    return Ok(SubmitWorkOutcome {
+                        created: false,
+                        view: SubmitWorkView {
+                            execution_id: execution.execution_id.clone(),
+                            state: execution.state,
+                            session_id: execution.session_id.clone(),
+                        },
+                    });
+                }
             }
 
             let session_material = match command.session_id.as_ref() {
@@ -246,16 +276,26 @@ impl AppState {
             );
 
             store.executions.insert(execution_id.clone(), execution);
+
+            if let Some(key) = submit_key {
+                store.submit_work_replays.insert(
+                    key.lookup_key,
+                    SubmitWorkReplay {
+                        request_fingerprint: key.request_fingerprint,
+                        execution_id: execution_id.clone(),
+                    },
+                );
+            }
         }
 
-        Ok((
-            execution_id.clone(),
-            SubmitWorkView {
+        Ok(SubmitWorkOutcome {
+            created: true,
+            view: SubmitWorkView {
                 execution_id,
                 state: ExecutionState::Pending,
                 session_id: command.session_id,
             },
-        ))
+        })
     }
 
     pub async fn list_executions(&self) -> Vec<ExecutionListItem> {
@@ -438,6 +478,7 @@ struct Store {
     agent_instances: BTreeMap<String, AgentInstanceRecord>,
     sessions: BTreeMap<String, SessionRecord>,
     executions: BTreeMap<String, ExecutionRecord>,
+    submit_work_replays: BTreeMap<String, SubmitWorkReplay>,
 }
 
 impl Store {
@@ -586,10 +627,58 @@ impl Store {
     }
 }
 
+#[derive(Clone, Debug)]
+struct SubmitWorkReplay {
+    request_fingerprint: Value,
+    execution_id: String,
+}
+
+#[derive(Clone, Debug)]
+struct SubmitWorkKey {
+    lookup_key: String,
+    request_fingerprint: Value,
+}
+
+impl SubmitWorkKey {
+    fn new(
+        agent_instance_id: &str,
+        idempotency_key: Option<String>,
+        input: &Value,
+        session_id: Option<&str>,
+        references: &[Value],
+    ) -> Option<Self> {
+        let idempotency_key = idempotency_key?;
+        Some(Self {
+            lookup_key: format!("{agent_instance_id}:{idempotency_key}"),
+            request_fingerprint: canonical_json(&json!({
+                "agent_instance_id": agent_instance_id,
+                "session_id": session_id,
+                "input": input,
+                "references": references,
+            })),
+        })
+    }
+}
+
 fn json_value(pairs: Vec<(&str, &str)>) -> Value {
     let object = pairs
         .into_iter()
         .map(|(key, value)| (key.to_string(), Value::String(value.to_string())))
         .collect();
     Value::Object(object)
+}
+
+fn canonical_json(value: &Value) -> Value {
+    match value {
+        Value::Object(map) => {
+            let sorted = map
+                .iter()
+                .map(|(key, value)| (key.clone(), canonical_json(value)))
+                .collect::<BTreeMap<_, _>>();
+
+            Value::Object(sorted.into_iter().collect())
+        }
+        Value::Array(items) => Value::Array(items.iter().map(canonical_json).collect()),
+        _ => value.clone(),
+    }
 }
