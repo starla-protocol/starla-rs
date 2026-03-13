@@ -2,11 +2,11 @@
 
 ## Current Target
 
-- claim: `Core`
+- claim: `Core + Tools`
 - binding: `HTTP Binding v1`
 - protocol seed:
-  - `/home/alan/projects/starla-protocol/conformance/v1/claims/core-http-claim-seed.md`
-  - `/home/alan/projects/starla-protocol/conformance/v1/reports/core-http-report-seed.md`
+  - `/home/alan/projects/starla-protocol/conformance/v1/claims/core-tools-http-claim-seed.md`
+  - `/home/alan/projects/starla-protocol/conformance/v1/reports/core-tools-http-report-seed.md`
 
 ## Current Decision
 
@@ -81,6 +81,20 @@
   - `session_material_visible_on_session_attached_execution`
 - pass `execution-snapshot-separates-sections.md`
   - `execution_snapshot_separates_context_from_recent_events`
+- pass `tool-definition-listing-includes-visible-tool.md`
+  - `tool_definition_routes_cover_listing_and_inspection`
+- pass `tool-definition-inspection-exposes-state.md`
+  - `tool_definition_routes_cover_listing_and_inspection`
+- pass `missing-tool-definition-inspection-returns-not-found.md`
+  - `missing_tool_definition_inspection_returns_not_found`
+- pass `invoke-tool-success.md`
+  - `invoke_tool_success_updates_execution_events_without_exposing_tool_context`
+- pass `invoke-tool-rejected-when-tool-disabled.md`
+  - `invoke_tool_rejected_when_tool_disabled`
+- pass `invoke-tool-rejected-when-tool-deleted.md`
+  - `invoke_tool_rejected_when_tool_deleted`
+- pass `invoke-tool-denied-by-capability.md`
+  - `invoke_tool_denied_by_capability`
 
 ## Traces
 
@@ -99,13 +113,15 @@
 
 - not claimed:
   - approvals
-  - tools
   - channels
   - stream binding
+  - approval-gated tool behavior
+  - visible tool-derived context contribution
+  - artifacts at the tool boundary
 - no local evidence should be read as proof for excluded surfaces
 
 ## Remaining Work
 
-- execute the same claim through a standalone external conformance runner
+- execute the same `Core + Tools` claim through a standalone external conformance runner
 - record runner identity and run date
 - convert provisional pass into a real implementation report

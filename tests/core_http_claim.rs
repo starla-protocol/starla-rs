@@ -700,6 +700,120 @@ async fn execution_snapshot_separates_context_from_recent_events() {
 }
 
 #[tokio::test]
+async fn tool_definition_routes_cover_listing_and_inspection() {
+    let state = AppState::seeded();
+
+    let (status, body) = send(&state, Method::GET, "/v1/tools", None).await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(
+        body.as_array()
+            .expect("tool list")
+            .iter()
+            .any(|item| item["tool_id"] == "tool-echo")
+    );
+
+    let (status, body) = send(&state, Method::GET, "/v1/tools/tool-echo", None).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["state"], "enabled");
+}
+
+#[tokio::test]
+async fn missing_tool_definition_inspection_returns_not_found() {
+    let state = AppState::seeded();
+
+    let (status, body) = send(&state, Method::GET, "/v1/tools/missing-tool", None).await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    assert_error_code(&body, "not_found");
+}
+
+#[tokio::test]
+async fn invoke_tool_success_updates_execution_events_without_exposing_tool_context() {
+    let state = AppState::seeded();
+
+    let (status, body) = send(
+        &state,
+        Method::POST,
+        "/v1/executions/execution-running/tools/tool-echo/invoke",
+        Some(json!({
+            "input": {"message": "tool hello"}
+        })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["execution_id"], "execution-running");
+    assert_eq!(body["tool_result"]["tool_id"], "tool-echo");
+    assert_eq!(body["tool_result"]["outcome"], "completed");
+    assert_eq!(
+        body["tool_result"]["result"]["echo"]["message"],
+        "tool hello"
+    );
+
+    let (status, body) = send(
+        &state,
+        Method::GET,
+        "/v1/executions/execution-running",
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(body["context"].get("tool_derived_material").is_none());
+    let recent_events = body["recent_events"].as_array().expect("recent events");
+    assert_eq!(recent_events[2]["event"], "tool.invoked");
+    assert_eq!(recent_events[3]["event"], "tool.completed");
+}
+
+#[tokio::test]
+async fn invoke_tool_rejected_when_tool_disabled() {
+    let state = AppState::seeded();
+
+    let (status, body) = send(
+        &state,
+        Method::POST,
+        "/v1/executions/execution-running/tools/tool-disabled/invoke",
+        Some(json!({
+            "input": {"message": "tool hello"}
+        })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CONFLICT);
+    assert_error_code(&body, "invalid_state");
+}
+
+#[tokio::test]
+async fn invoke_tool_rejected_when_tool_deleted() {
+    let state = AppState::seeded();
+
+    let (status, body) = send(
+        &state,
+        Method::POST,
+        "/v1/executions/execution-running/tools/tool-deleted/invoke",
+        Some(json!({
+            "input": {"message": "tool hello"}
+        })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CONFLICT);
+    assert_error_code(&body, "invalid_state");
+}
+
+#[tokio::test]
+async fn invoke_tool_denied_by_capability() {
+    let state = AppState::seeded();
+
+    let (status, body) = send(
+        &state,
+        Method::POST,
+        "/v1/executions/execution-running/tools/tool-capability-denied/invoke",
+        Some(json!({
+            "input": {"message": "tool hello"}
+        })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+    assert_error_code(&body, "capability_denied");
+}
+
+#[tokio::test]
 async fn execution_failure_terminal_for_failed_synthetic_outcome() {
     let state = AppState::seeded();
     let (status, body) = send(

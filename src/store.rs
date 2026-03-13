@@ -3,7 +3,8 @@ use crate::domain::{
     AgentInstanceState, AgentInstanceView, ContextSnapshot, DelegateExecutionCommand,
     DelegateExecutionView, EventRecord, ExecutionListItem, ExecutionRecord, ExecutionSnapshot,
     ExecutionState, ProtocolError, SessionRecord, SessionState, SessionView, SubmitWorkCommand,
-    SubmitWorkOutcome, SubmitWorkView, SyntheticOutcome, synthetic_outcome,
+    SubmitWorkOutcome, SubmitWorkView, SyntheticOutcome, ToolDefinitionRecord, ToolDefinitionState,
+    ToolDefinitionView, ToolInvocationView, ToolInvokeOutcome, ToolResultView, synthetic_outcome,
 };
 use serde_json::{Value, json};
 use std::{
@@ -198,6 +199,24 @@ impl AppState {
         Ok(session.view())
     }
 
+    pub async fn list_tools(&self) -> Vec<ToolDefinitionView> {
+        let store = self.store.read().await;
+        store
+            .tool_definitions
+            .values()
+            .map(ToolDefinitionRecord::view)
+            .collect()
+    }
+
+    pub async fn get_tool(&self, tool_id: &str) -> Result<ToolDefinitionView, ProtocolError> {
+        let store = self.store.read().await;
+        let tool = store
+            .tool_definitions
+            .get(tool_id)
+            .ok_or(ProtocolError::NotFound)?;
+        Ok(tool.view())
+    }
+
     pub async fn submit_work(
         &self,
         agent_instance_id: &str,
@@ -353,6 +372,79 @@ impl AppState {
         Ok(execution.list_item())
     }
 
+    pub async fn invoke_tool(
+        &self,
+        execution_id: &str,
+        tool_id: &str,
+        input: Value,
+    ) -> Result<ToolInvocationView, ProtocolError> {
+        let mut store = self.store.write().await;
+
+        let tool = store
+            .tool_definitions
+            .get(tool_id)
+            .ok_or(ProtocolError::NotFound)?
+            .clone();
+
+        match tool.state {
+            ToolDefinitionState::Enabled => {}
+            ToolDefinitionState::Disabled | ToolDefinitionState::Deleted => {
+                return Err(ProtocolError::InvalidState);
+            }
+        }
+
+        if tool.tool_id == "tool-capability-denied" {
+            return Err(ProtocolError::CapabilityDenied);
+        }
+
+        let execution = store
+            .executions
+            .get_mut(execution_id)
+            .ok_or(ProtocolError::NotFound)?;
+
+        if matches!(
+            execution.state,
+            ExecutionState::Completed | ExecutionState::Failed | ExecutionState::Canceled
+        ) {
+            return Err(ProtocolError::InvalidState);
+        }
+
+        let (outcome, result) = match tool.synthetic_outcome {
+            ToolInvokeOutcome::Completed => (
+                ToolInvokeOutcome::Completed,
+                Some(json!({
+                    "echo": input
+                })),
+            ),
+            ToolInvokeOutcome::Failed => (
+                ToolInvokeOutcome::Failed,
+                Some(json!({
+                    "error": "synthetic_failure"
+                })),
+            ),
+        };
+
+        execution.push_event("tool.invoked", None);
+        match outcome {
+            ToolInvokeOutcome::Completed => {
+                execution.push_event("tool.completed", None);
+            }
+            ToolInvokeOutcome::Failed => {
+                execution.push_event("tool.failed", None);
+            }
+        }
+
+        Ok(ToolInvocationView {
+            execution_id: execution.execution_id.clone(),
+            state: execution.state,
+            tool_result: ToolResultView {
+                tool_id: tool.tool_id,
+                outcome,
+                result,
+            },
+        })
+    }
+
     pub async fn delegate_execution(
         &self,
         parent_execution_id: &str,
@@ -478,6 +570,7 @@ struct Store {
     agent_instances: BTreeMap<String, AgentInstanceRecord>,
     sessions: BTreeMap<String, SessionRecord>,
     executions: BTreeMap<String, ExecutionRecord>,
+    tool_definitions: BTreeMap<String, ToolDefinitionRecord>,
     submit_work_replays: BTreeMap<String, SubmitWorkReplay>,
 }
 
@@ -541,6 +634,47 @@ impl Store {
                 "session-closed",
                 SessionState::Closed,
                 Some(json_value(vec![("scope", "session-closed")])),
+            ),
+        );
+
+        store.tool_definitions.insert(
+            "tool-echo".to_string(),
+            ToolDefinitionRecord::new(
+                "tool-echo",
+                ToolDefinitionState::Enabled,
+                ToolInvokeOutcome::Completed,
+            ),
+        );
+        store.tool_definitions.insert(
+            "tool-disabled".to_string(),
+            ToolDefinitionRecord::new(
+                "tool-disabled",
+                ToolDefinitionState::Disabled,
+                ToolInvokeOutcome::Completed,
+            ),
+        );
+        store.tool_definitions.insert(
+            "tool-deleted".to_string(),
+            ToolDefinitionRecord::new(
+                "tool-deleted",
+                ToolDefinitionState::Deleted,
+                ToolInvokeOutcome::Completed,
+            ),
+        );
+        store.tool_definitions.insert(
+            "tool-capability-denied".to_string(),
+            ToolDefinitionRecord::new(
+                "tool-capability-denied",
+                ToolDefinitionState::Enabled,
+                ToolInvokeOutcome::Completed,
+            ),
+        );
+        store.tool_definitions.insert(
+            "tool-fail".to_string(),
+            ToolDefinitionRecord::new(
+                "tool-fail",
+                ToolDefinitionState::Enabled,
+                ToolInvokeOutcome::Failed,
             ),
         );
 

@@ -6,7 +6,7 @@ Rust reference claimant for `starla-protocol`.
 
 - state: early implementation
 - target claim:
-  - `Core`
+  - `Core + Tools`
   - `HTTP Binding v1`
 - protocol repo:
   - `https://github.com/starla-protocol/starla-protocol`
@@ -22,14 +22,13 @@ Included:
 - single-process HTTP daemon
 - in-memory state
 - deterministic synthetic execution behavior
-- only the public surface needed for the seeded `Core` claim
-- first `Core` HTTP slice in progress
+- only the public surface needed for the seeded `Core + Tools` claim
+- first `Core + Tools` HTTP slice in progress
 
 Excluded:
 
 - `Stream Binding v1`
 - `Core + Approvals`
-- `Core + Tools`
 - `Core + Channels`
 - durability across restart
 - product UI and packaging
@@ -38,8 +37,8 @@ Excluded:
 
 Implement enough public HTTP behavior to satisfy:
 
-- `conformance/v1/claims/core-http-claim-seed.md`
-- `conformance/v1/reports/core-http-report-seed.md`
+- `conformance/v1/claims/core-tools-http-claim-seed.md`
+- `conformance/v1/reports/core-tools-http-report-seed.md`
 
 Implementation sequence:
 
@@ -50,8 +49,8 @@ Implementation sequence:
 
 Claim automation:
 
-- `scripts/run-core-http-claim.sh`
-- `.github/workflows/core-http-claim.yml`
+- `scripts/run-core-tools-http-claim.sh`
+- `.github/workflows/core-tools-http-claim.yml`
 
 ## Development
 

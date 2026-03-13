@@ -2,5 +2,6 @@
 pub enum ProtocolError {
     NotFound,
     InvalidState,
+    CapabilityDenied,
     IdempotencyConflict,
 }
