@@ -1,0 +1,23 @@
+name: core-http-claim
+
+on:
+  push:
+    branches:
+      - main
+      - implement/core-http-claimant
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  core-http-claim:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Run Core HTTP claim checks
+        run: ./scripts/run-core-http-claim.sh

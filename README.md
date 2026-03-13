@@ -4,7 +4,7 @@ Rust reference claimant for `starla-protocol`.
 
 ## Status
 
-- state: bootstrap
+- state: early implementation
 - target claim:
   - `Core`
   - `HTTP Binding v1`
@@ -23,6 +23,7 @@ Included:
 - in-memory state
 - deterministic synthetic execution behavior
 - only the public surface needed for the seeded `Core` claim
+- first `Core` HTTP slice in progress
 
 Excluded:
 
@@ -39,6 +40,18 @@ Implement enough public HTTP behavior to satisfy:
 
 - `conformance/v1/claims/core-http-claim-seed.md`
 - `conformance/v1/reports/core-http-report-seed.md`
+
+Implementation sequence:
+
+- `IMPLEMENTATION_PLAN.md`
+- `IMPLEMENTATION_DECISIONS.md`
+- `CLAIM_STATUS.md`
+- `RECOVERY.md`
+
+Claim automation:
+
+- `scripts/run-core-http-claim.sh`
+- `.github/workflows/core-http-claim.yml`
 
 ## Development
 
