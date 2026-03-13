@@ -37,6 +37,7 @@ impl IntoResponse for ProtocolError {
         let (status, code) = match self {
             Self::NotFound => (StatusCode::NOT_FOUND, "not_found"),
             Self::InvalidState => (StatusCode::CONFLICT, "invalid_state"),
+            Self::CapabilityDenied => (StatusCode::FORBIDDEN, "capability_denied"),
             Self::IdempotencyConflict => (StatusCode::CONFLICT, "idempotency_conflict"),
         };
 
@@ -65,6 +66,11 @@ struct DelegateExecutionRequest {
     input: Value,
     #[serde(default)]
     references: Vec<Value>,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+struct InvokeToolRequest {
+    input: Value,
 }
 
 pub fn router(state: AppState) -> Router {
@@ -107,6 +113,8 @@ pub fn router(state: AppState) -> Router {
         .route("/v1/sessions", get(list_sessions))
         .route("/v1/sessions/{session_id}", get(get_session))
         .route("/v1/sessions/{session_id}/close", post(close_session))
+        .route("/v1/tools", get(list_tools))
+        .route("/v1/tools/{tool_id}", get(get_tool))
         .route("/v1/executions", get(list_executions))
         .route("/v1/executions/{execution_id}", get(get_execution))
         .route(
@@ -121,6 +129,10 @@ pub fn router(state: AppState) -> Router {
             "/v1/executions/{execution_id}/delegate",
             post(delegate_execution),
         )
+        .route(
+            "/v1/executions/{execution_id}/tools/{tool_id}/invoke",
+            post(invoke_tool),
+        )
         .with_state(state)
 }
 
@@ -130,7 +142,7 @@ async fn root() -> Json<RootResponse> {
         state: "early_implementation",
         target_protocol_version: "v1",
         target_binding: "HTTP Binding v1",
-        target_profile: "Core",
+        target_profile: "Core + Tools",
     })
 }
 
@@ -258,6 +270,19 @@ async fn close_session(
     Ok(Json(state.close_session(&session_id).await?))
 }
 
+async fn list_tools(
+    State(state): State<AppState>,
+) -> Result<Json<Vec<crate::domain::ToolDefinitionView>>, ProtocolError> {
+    Ok(Json(state.list_tools().await))
+}
+
+async fn get_tool(
+    Path(tool_id): Path<String>,
+    State(state): State<AppState>,
+) -> Result<Json<crate::domain::ToolDefinitionView>, ProtocolError> {
+    Ok(Json(state.get_tool(&tool_id).await?))
+}
+
 async fn list_executions(
     State(state): State<AppState>,
 ) -> Result<Json<Vec<crate::domain::ExecutionListItem>>, ProtocolError> {
@@ -303,4 +328,16 @@ async fn delegate_execution(
 
     runtime::spawn_execution_progress(state, child_execution_id);
     Ok((StatusCode::CREATED, Json(view)))
+}
+
+async fn invoke_tool(
+    Path((execution_id, tool_id)): Path<(String, String)>,
+    State(state): State<AppState>,
+    Json(request): Json<InvokeToolRequest>,
+) -> Result<Json<crate::domain::ToolInvocationView>, ProtocolError> {
+    Ok(Json(
+        state
+            .invoke_tool(&execution_id, &tool_id, request.input)
+            .await?,
+    ))
 }

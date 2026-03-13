@@ -102,7 +102,7 @@ fn assert_error_code(body: &Value, code: &str) {
 }
 
 #[tokio::test]
-async fn core_http_claim_seed_passes_over_running_daemon() {
+async fn core_tools_http_claim_seed_passes_over_running_daemon() {
     let server = RunningServer::start().await;
     agent_definition_vectors(&server).await;
     drop(server);
@@ -129,6 +129,10 @@ async fn core_http_claim_seed_passes_over_running_daemon() {
 
     let server = RunningServer::start().await;
     delegation_vectors(&server).await;
+    drop(server);
+
+    let server = RunningServer::start().await;
+    tool_vectors(&server).await;
 }
 
 async fn agent_definition_vectors(server: &RunningServer) {
@@ -516,4 +520,80 @@ async fn delegation_vectors(server: &RunningServer) {
     assert_eq!(body["recent_events"][1]["event"], "execution.delegated");
     assert_eq!(body["recent_events"][2]["event"], "execution.state_changed");
     assert_eq!(body["recent_events"][3]["event"], "execution.failed");
+}
+
+async fn tool_vectors(server: &RunningServer) {
+    let (status, body) = server.get("/v1/tools").await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(
+        body.as_array()
+            .expect("tool list")
+            .iter()
+            .any(|item| item["tool_id"] == "tool-echo")
+    );
+
+    let (status, body) = server.get("/v1/tools/tool-echo").await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["state"], "enabled");
+
+    let (status, body) = server.get("/v1/tools/missing-tool").await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    assert_error_code(&body, "not_found");
+
+    let (status, body) = server
+        .post(
+            "/v1/executions/execution-running/tools/tool-echo/invoke",
+            Some(json!({
+                "input": {"message": "tool hello"}
+            })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["execution_id"], "execution-running");
+    assert_eq!(body["tool_result"]["tool_id"], "tool-echo");
+    assert_eq!(body["tool_result"]["outcome"], "completed");
+    assert_eq!(
+        body["tool_result"]["result"]["echo"]["message"],
+        "tool hello"
+    );
+
+    let (status, body) = server.get("/v1/executions/execution-running").await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(body["context"].get("tool_derived_material").is_none());
+    let recent_events = body["recent_events"].as_array().expect("recent events");
+    assert_eq!(recent_events[2]["event"], "tool.invoked");
+    assert_eq!(recent_events[3]["event"], "tool.completed");
+
+    let (status, body) = server
+        .post(
+            "/v1/executions/execution-running/tools/tool-disabled/invoke",
+            Some(json!({
+                "input": {"message": "tool hello"}
+            })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::CONFLICT);
+    assert_error_code(&body, "invalid_state");
+
+    let (status, body) = server
+        .post(
+            "/v1/executions/execution-running/tools/tool-deleted/invoke",
+            Some(json!({
+                "input": {"message": "tool hello"}
+            })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::CONFLICT);
+    assert_error_code(&body, "invalid_state");
+
+    let (status, body) = server
+        .post(
+            "/v1/executions/execution-running/tools/tool-capability-denied/invoke",
+            Some(json!({
+                "input": {"message": "tool hello"}
+            })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+    assert_error_code(&body, "capability_denied");
 }

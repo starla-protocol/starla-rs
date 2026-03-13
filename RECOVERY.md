@@ -14,8 +14,8 @@ Update it only when:
 ## Current Target
 
 - repo: `starla-rs`
-- branch: `implement/core-http-claimant`
-- claim: `Core`
+- branch: `implement/core-tools-http-claimant`
+- claim: `Core + Tools`
 - binding: `HTTP Binding v1`
 
 ## Read Order
@@ -33,24 +33,25 @@ Run:
 ```bash
 git branch --show-current
 git status --short
-./scripts/run-core-http-claim.sh
+./scripts/run-core-tools-http-claim.sh
 ```
 
 Expected:
 
-- branch is `implement/core-http-claimant`
+- branch is `implement/core-tools-http-claimant`
 - working tree is clean
 - claim script passes
 
 ## Current Boundary
 
-- do not broaden beyond the seeded `Core` HTTP claim without an explicit scope change
-- do not add approvals, tools, channels, stream, persistence, or product UI work here
+- do not broaden beyond the seeded `Core + Tools` HTTP claim without an explicit scope change
+- do not add approvals, channels, stream, persistence, or product UI work here
+- do not activate visible tool-derived context contribution, tool approvals, or tool artifacts
 - keep module boundaries aligned with `domain`, `store`, `runtime`, and `http`
 
 ## Immediate Next Step
 
 After a green claim run:
 
-- turn the provisional local claim status into a dated implementation report, or
+- run the protocol-side external `Core + Tools` runner, or
 - explicitly choose the next claimant scope before adding new runtime surface
