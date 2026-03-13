@@ -19,7 +19,7 @@ Built:
 
 Not built:
 
-- conformance execution
+- external conformance execution
 
 ## Target
 
@@ -38,6 +38,7 @@ Do not activate excluded optional surfaces.
 
 - `conformance/v1/claims/core-http-claim-seed.md` remains honest
 - `conformance/v1/reports/core-http-report-seed.md` passes
+- local implementation-side status is tracked in `CLAIM_STATUS.md`
 
 ## Deferred
 

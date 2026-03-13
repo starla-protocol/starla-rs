@@ -45,6 +45,7 @@ Implementation sequence:
 
 - `IMPLEMENTATION_PLAN.md`
 - `IMPLEMENTATION_DECISIONS.md`
+- `CLAIM_STATUS.md`
 
 ## Development
 
