@@ -40,6 +40,10 @@ Implement enough public HTTP behavior to satisfy:
 - `conformance/v1/claims/core-http-claim-seed.md`
 - `conformance/v1/reports/core-http-report-seed.md`
 
+Implementation sequence:
+
+- `IMPLEMENTATION_PLAN.md`
+
 ## Development
 
 Run:
