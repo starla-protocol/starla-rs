@@ -220,6 +220,20 @@ async fn submit_work_success_creates_pending_execution_and_visible_context() {
 }
 
 #[tokio::test]
+async fn execution_listing_includes_visible_execution() {
+    let state = AppState::seeded();
+    let (status, body) = send(&state, Method::GET, "/v1/executions", None).await;
+
+    assert_eq!(status, StatusCode::OK);
+    assert!(
+        body.as_array()
+            .expect("execution list")
+            .iter()
+            .any(|item| item["execution_id"] == "execution-running")
+    );
+}
+
+#[tokio::test]
 async fn submit_work_rejected_when_instance_paused() {
     let state = AppState::seeded();
     let (status, body) = send(
@@ -492,6 +506,36 @@ async fn context_snapshot_omits_absent_buckets_without_lineage() {
 }
 
 #[tokio::test]
+async fn session_material_visible_on_session_attached_execution() {
+    let state = AppState::seeded();
+    let (status, body) = send(
+        &state,
+        Method::POST,
+        "/v1/agent-instances/agent-inst-primary/submit-work",
+        Some(json!({
+            "input": {"message": "hello"},
+            "session_id": "session-open"
+        })),
+    )
+    .await;
+
+    assert_eq!(status, StatusCode::CREATED);
+    let execution_id = body["execution_id"].as_str().expect("execution id");
+
+    let (status, context_body) = send(
+        &state,
+        Method::GET,
+        &format!("/v1/executions/{execution_id}/context"),
+        None,
+    )
+    .await;
+
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(context_body["session_material"]["scope"], "session-open");
+    assert!(context_body.get("inherited_lineage_material").is_none());
+}
+
+#[tokio::test]
 async fn delegated_child_context_preserves_session_and_lineage_buckets() {
     let state = AppState::seeded();
     let (status, body) = send(
@@ -534,6 +578,34 @@ async fn delegated_child_context_preserves_session_and_lineage_buckets() {
 }
 
 #[tokio::test]
+async fn inherited_lineage_material_omitted_without_visible_lineage() {
+    let state = AppState::seeded();
+    let (status, body) = send(
+        &state,
+        Method::POST,
+        "/v1/agent-instances/agent-inst-primary/submit-work",
+        Some(json!({
+            "input": {"message": "standalone"}
+        })),
+    )
+    .await;
+
+    assert_eq!(status, StatusCode::CREATED);
+    let execution_id = body["execution_id"].as_str().expect("execution id");
+
+    let (status, context_body) = send(
+        &state,
+        Method::GET,
+        &format!("/v1/executions/{execution_id}/context"),
+        None,
+    )
+    .await;
+
+    assert_eq!(status, StatusCode::OK);
+    assert!(context_body.get("inherited_lineage_material").is_none());
+}
+
+#[tokio::test]
 async fn execution_snapshot_separates_context_from_recent_events() {
     let state = AppState::seeded();
     let (status, body) = send(
@@ -551,6 +623,40 @@ async fn execution_snapshot_separates_context_from_recent_events() {
     assert_eq!(body["context"]["execution_id"], "execution-running");
     assert!(body["recent_events"].is_array());
     assert!(body["context"].get("recent_events").is_none());
+}
+
+#[tokio::test]
+async fn execution_failure_terminal_for_failed_synthetic_outcome() {
+    let state = AppState::seeded();
+    let (status, body) = send(
+        &state,
+        Method::POST,
+        "/v1/agent-instances/agent-inst-primary/submit-work",
+        Some(json!({
+            "input": {"message": "run", "synthetic_outcome": "failed"}
+        })),
+    )
+    .await;
+
+    assert_eq!(status, StatusCode::CREATED);
+    let execution_id = body["execution_id"].as_str().expect("execution id");
+
+    sleep(Duration::from_millis(80)).await;
+
+    let (status, body) = send(
+        &state,
+        Method::GET,
+        &format!("/v1/executions/{execution_id}"),
+        None,
+    )
+    .await;
+
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["state"], "failed");
+    assert_eq!(body["recent_events"][0]["event"], "execution.created");
+    assert_eq!(body["recent_events"][1]["event"], "execution.state_changed");
+    assert_eq!(body["recent_events"][2]["event"], "execution.failed");
+    assert_eq!(body["recent_events"].as_array().expect("events").len(), 3);
 }
 
 #[tokio::test]
