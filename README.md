@@ -4,7 +4,7 @@ Rust reference claimant for `starla-protocol`.
 
 ## Status
 
-- state: bootstrap
+- state: early implementation
 - target claim:
   - `Core`
   - `HTTP Binding v1`
@@ -23,6 +23,7 @@ Included:
 - in-memory state
 - deterministic synthetic execution behavior
 - only the public surface needed for the seeded `Core` claim
+- first `Core` HTTP slice in progress
 
 Excluded:
 
@@ -43,6 +44,7 @@ Implement enough public HTTP behavior to satisfy:
 Implementation sequence:
 
 - `IMPLEMENTATION_PLAN.md`
+- `IMPLEMENTATION_DECISIONS.md`
 
 ## Development
 
