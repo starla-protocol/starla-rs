@@ -220,6 +220,55 @@ async fn submit_work_success_creates_pending_execution_and_visible_context() {
 }
 
 #[tokio::test]
+async fn submit_work_rejected_when_instance_paused() {
+    let state = AppState::seeded();
+    let (status, body) = send(
+        &state,
+        Method::POST,
+        "/v1/agent-instances/agent-inst-paused/submit-work",
+        Some(json!({
+            "input": {"message": "hi"}
+        })),
+    )
+    .await;
+
+    assert_eq!(status, StatusCode::CONFLICT);
+    assert_error_code(&body, "invalid_state");
+}
+
+#[tokio::test]
+async fn submit_work_with_session_exposes_context_buckets() {
+    let state = AppState::seeded();
+    let (status, body) = send(
+        &state,
+        Method::POST,
+        "/v1/agent-instances/agent-inst-primary/submit-work",
+        Some(json!({
+            "input": {"message": "hello"},
+            "session_id": "session-open",
+            "references": [{"kind": "doc", "id": "doc-1"}]
+        })),
+    )
+    .await;
+
+    assert_eq!(status, StatusCode::CREATED);
+    let execution_id = body["execution_id"].as_str().expect("execution id");
+
+    let (status, context_body) = send(
+        &state,
+        Method::GET,
+        &format!("/v1/executions/{execution_id}/context"),
+        None,
+    )
+    .await;
+
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(context_body["explicit_input"]["message"], "hello");
+    assert_eq!(context_body["explicit_references"][0]["id"], "doc-1");
+    assert_eq!(context_body["session_material"]["scope"], "session-open");
+}
+
+#[tokio::test]
 async fn cancel_execution_rejected_when_already_terminal() {
     let state = AppState::seeded();
     let (status, body) = send(
@@ -232,6 +281,39 @@ async fn cancel_execution_rejected_when_already_terminal() {
 
     assert_eq!(status, StatusCode::CONFLICT);
     assert_error_code(&body, "invalid_state");
+}
+
+#[tokio::test]
+async fn cancel_execution_transitions_seeded_pending_execution() {
+    let state = AppState::seeded();
+    let (status, body) = send(
+        &state,
+        Method::POST,
+        "/v1/executions/execution-pending/cancel",
+        None,
+    )
+    .await;
+
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["state"], "canceled");
+
+    let (status, snapshot_body) = send(
+        &state,
+        Method::GET,
+        "/v1/executions/execution-pending",
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(snapshot_body["state"], "canceled");
+    assert_eq!(
+        snapshot_body["recent_events"]
+            .as_array()
+            .and_then(|events| events.last())
+            .and_then(|event| event.get("event"))
+            .and_then(Value::as_str),
+        Some("execution.canceled")
+    );
 }
 
 #[tokio::test]
@@ -310,12 +392,73 @@ async fn delegate_execution_rejects_missing_not_ready_and_self_target() {
 }
 
 #[tokio::test]
+async fn delegate_execution_success_preserves_parent_target_and_session() {
+    let state = AppState::seeded();
+    let (status, body) = send(
+        &state,
+        Method::POST,
+        "/v1/executions/execution-running/delegate",
+        Some(json!({
+            "target_agent_instance_id": "agent-inst-helper",
+            "input": {"message": "child", "synthetic_outcome": "failed"},
+            "references": [{"kind": "doc", "id": "child-ref"}]
+        })),
+    )
+    .await;
+
+    assert_eq!(status, StatusCode::CREATED);
+    let execution_id = body["execution_id"].as_str().expect("execution id");
+    assert_eq!(body["parent_execution_id"], "execution-running");
+    assert_eq!(body["agent_instance_id"], "agent-inst-helper");
+    assert_eq!(body["session_id"], "session-open");
+    assert_eq!(body["state"], "pending");
+
+    sleep(Duration::from_millis(80)).await;
+
+    let (status, snapshot_body) = send(
+        &state,
+        Method::GET,
+        &format!("/v1/executions/{execution_id}"),
+        None,
+    )
+    .await;
+
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(snapshot_body["state"], "failed");
+    assert_eq!(
+        snapshot_body["recent_events"][0]["event"],
+        "execution.created"
+    );
+    assert_eq!(
+        snapshot_body["recent_events"][1]["event"],
+        "execution.delegated"
+    );
+    assert_eq!(
+        snapshot_body["recent_events"][2]["event"],
+        "execution.state_changed"
+    );
+    assert_eq!(
+        snapshot_body["recent_events"][3]["event"],
+        "execution.failed"
+    );
+}
+
+#[tokio::test]
 async fn missing_execution_inspection_returns_not_found() {
     let state = AppState::seeded();
     let (status, body) = send(&state, Method::GET, "/v1/executions/missing", None).await;
 
     assert_eq!(status, StatusCode::NOT_FOUND);
     assert_error_code(&body, "not_found");
+}
+
+#[tokio::test]
+async fn failed_execution_inspection_remains_normal_resource_inspection() {
+    let state = AppState::seeded();
+    let (status, body) = send(&state, Method::GET, "/v1/executions/execution-failed", None).await;
+
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["state"], "failed");
 }
 
 #[tokio::test]
