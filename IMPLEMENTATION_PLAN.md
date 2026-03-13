@@ -14,7 +14,7 @@ Built:
 - `delegate execution`
 - `context snapshot`
 - `execution snapshot`
-- claim-aligned route tests for current slice
+- claim-aligned route and integration tests for current slice
 - claimant scope docs
 
 Not built:
